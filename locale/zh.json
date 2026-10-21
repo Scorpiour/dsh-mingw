@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git Bash 终端（MinGW64）",
+    "description": "在 Windows 上把 shell 工具从 PowerShell 换成 Git for Windows 自带的 MinGW64 bash，使用 POSIX 语法和 UTF-8 输入输出，无需另装 MinGW。"
+  }
+}

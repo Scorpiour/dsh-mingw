@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git Bash Shell (MinGW64)",
+    "description": "Runs the Windows shell tool in the MinGW64 bash bundled with Git for Windows instead of PowerShell, with POSIX parsing and UTF-8 I/O. No separate MinGW install is needed."
+  }
+}

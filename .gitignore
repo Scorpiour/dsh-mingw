@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Package manager logs and caches
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Build output and packed bundles
+dist/
+build/
+out/
+*.tgz
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# DSH local runtime state
+.dsh/
+.plugin-manager/
+profiles/
+sessions/
+*.jsonl
+*.jsonl.zstd
+
+# Temporary files and patch backups
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.history/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
