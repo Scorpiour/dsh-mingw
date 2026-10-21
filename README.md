@@ -2,6 +2,8 @@
 
 把 Windows 上 DSH 的默认 shell 工具从 PowerShell 换成 **Git Bash**。
 
+仓库：<https://github.com/Scorpiour/dsh-mingw>
+
 Git for Windows 本身就自带一套 MinGW64 用户态（`bash`、coreutils、`git`、编译器工具链都在其中），
 所以这里**不需要单独安装 MinGW 或 MSYS2**：插件直接用 Git 自带的
 `C:\Program Files\Git\bin\bash.exe`，并把它所在的目录放到子进程 `PATH` 最前面。
@@ -30,16 +32,36 @@ Git for Windows 本身就自带一套 MinGW64 用户态（`bash`、coreutils、`
 
 ## 安装
 
-在 DSH 里用插件管理器安装本目录：
+### 从 GitHub 安装（推荐）
+
+在 DSH 的插件管理器里：
 
 ```text
-plugin_manager action=install_bundle target=E:\Develop\dsh-win-mingw
+plugin_manager action=install_bundle target=github:Scorpiour/dsh-mingw
 ```
 
 或者从 CLI：
 
 ```sh
-dsh plugin --profile web add E:\Develop\dsh-win-mingw
+dsh plugin --profile web add github:Scorpiour/dsh-mingw
+```
+
+需要固定发布版本时使用 tag：
+
+```sh
+dsh plugin --profile web add github:Scorpiour/dsh-mingw#v0.1.1
+```
+
+### 从本地目录安装（开发）
+
+在克隆目录或源码目录中直接安装：
+
+```text
+plugin_manager action=install_bundle target=<克隆目录>
+```
+
+```sh
+dsh plugin --profile web add <克隆目录>
 ```
 
 安装会改写三个 preset 定义（`standard`、`ptc` 和 `cordis`），不动宿主现有的 PowerShell
@@ -112,8 +134,11 @@ PowerShell executor 不会被替换。旧会话和 `minimal` 仍然能用原来�
   重新生成 `cordis.patch.yml`。升级 DSH 后重跑：
 
   ```sh
-  node scripts/build-patch.mjs E:\Develop\deepseek-harness
+  node scripts/build-patch.mjs
   ```
+
+  默认读取 `DSH_CHECKOUT`，否则自动寻找同级的 `../deepseek-harness`；也可以显式传入
+  checkout 路径。脚本共用 `scripts/dev-paths.mjs` 的探测逻辑。
 
 ## 测试
 
@@ -133,6 +158,20 @@ runtime resolution；`tests/executor.test.mjs` 则挂载真实的
 `@deepseek-ai/dsh-sandbox-policy` 和本执行器，实际跑一条 `bash -c` 命令，验证
 `Msys`、POSIX 路径、UTF-8 中文和 `DSH_*` 注入。`tests/` 和 `scripts/` 不包含在发布用的
 `files` 里。
+
+`tests/import-live-resolution.mjs` 和 `tests/group-mount.test.mjs` 需要真实的 DSH 源码
+checkout 和已安装 profile。默认会寻找同级的 `../deepseek-harness`，profile 默认是
+`~/.dsh/profiles/web`；也可以用环境变量覆盖。找不到时脚本会直接报出缺失的路径，而不是
+静默跳过：
+
+```powershell
+$env:DSH_CHECKOUT = 'D:\src\deepseek-harness'
+$env:DSH_PROFILE_DIR = "$env:USERPROFILE\.dsh\profiles\web"
+node tests/import-live-resolution.mjs
+node tests/group-mount.test.mjs
+```
+
+`DSH_CHECKOUT` 也用于 `scripts/build-patch.mjs`。
 
 ## 排错：`agent-preset/invalid ... never start`
 
@@ -172,3 +211,7 @@ imported: [ 'Config', 'MingwBashExecutor', 'default' ]
   `@local/dsh-win-mingw/executor` 这个独立入口，不受包根旧缓存影响。
 - 依赖 `@deepseek-ai/dsh-bash-sandbox` / `dsh-bash-local` 的当前 API，DSH 升级后先跑
   测试和 `build-patch.mjs`，再安装更新。
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。

@@ -9,17 +9,19 @@
  * Usage:
  *   node scripts/build-patch.mjs [DSH checkout root]
  *
- * The checkout defaults to DSH_CHECKOUT, then to the sibling source checkout
- * that produced this plugin.
+ * Without an argument, DSH_CHECKOUT is used, then a sibling checkout such as
+ * `../deepseek-harness`. The dev helper validates the directory before the
+ * preset files are read.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveCheckout } from './dev-paths.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(here, '..')
-const checkout = resolve(process.argv[2] ?? process.env.DSH_CHECKOUT ?? 'E:\\Develop\\deepseek-harness')
+const checkout = process.argv[2] === undefined ? resolveCheckout() : resolve(process.argv[2])
 
 /** The two shipped rows replaced in each preset. */
 const SHIPPED_ROWS = `          - id: tool-bash

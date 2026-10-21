@@ -1,10 +1,27 @@
 {
   "name": "@local/dsh-win-mingw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Runs the Windows DSH shell tool in Git Bash (the MinGW64 shell bundled with Git for Windows) instead of PowerShell.",
   "type": "module",
   "license": "MIT",
+  "author": "Scorpiour",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "git-bash",
+    "mingw",
+    "windows",
+    "shell"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Scorpiour/dsh-mingw.git"
+  },
+  "homepage": "https://github.com/Scorpiour/dsh-mingw#readme",
+  "bugs": {
+    "url": "https://github.com/Scorpiour/dsh-mingw/issues"
+  },
   "exports": {
     ".": "./index.js",
     "./executor": "./executor.js",
@@ -22,7 +39,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0"

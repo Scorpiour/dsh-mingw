@@ -7,8 +7,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { resolveCheckout } from '../scripts/dev-paths.mjs'
 
-const checkout = 'E:/Develop/deepseek-harness'
+const checkout = resolveCheckout()
 
 /** Map package name to its workspace directory by reading every workspace manifest. */
 function workspacePackages() {

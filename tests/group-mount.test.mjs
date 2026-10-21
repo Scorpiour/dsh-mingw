@@ -1,16 +1,27 @@
 /**
  * Dev-only group-mount test: mount the isolated `shell` group exactly as the
  * preset does, in a fresh process with the profile's runtime resolution.
+ *
+ * Set DSH_CHECKOUT to locate the DSH source checkout and DSH_PROFILE_DIR (or
+ * DSH_HOME / DSH_PROFILE) to select the installed profile when the defaults do
+ * not apply.
  */
 
-import { Context } from 'file:///E:/Develop/deepseek-harness/vendor/cordis/lib/index.js'
-import Loader from 'file:///E:/Develop/deepseek-harness/vendor/loader/lib/index.js'
-import Group from 'file:///E:/Develop/deepseek-harness/vendor/group/lib/index.js'
-import { createRuntimeResolution, loadProfileDirectory, PluginPackages } from 'file:///E:/Develop/deepseek-harness/packages/boot/app-boot/lib/index.js'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { resolveCheckout, resolveInstallAnchor, resolveProfileDir } from '../scripts/dev-paths.mjs'
 
-const profileDir = 'C:\\Users\\Scorpiour\\.dsh\\profiles\\web'
-const installAnchor = 'E:\\Develop\\deepseek-harness\\apps\\cli\\package.json'
+const checkout = resolveCheckout()
+const profileDir = resolveProfileDir()
+const installAnchor = resolveInstallAnchor(checkout)
+const [{ Context }, { default: Loader }, { default: Group }, { createRuntimeResolution, loadProfileDirectory, PluginPackages }] = await Promise.all([
+  import(pathToFileURL(join(checkout, 'vendor/cordis/lib/index.js')).href),
+  import(pathToFileURL(join(checkout, 'vendor/loader/lib/index.js')).href),
+  import(pathToFileURL(join(checkout, 'vendor/group/lib/index.js')).href),
+  import(pathToFileURL(join(checkout, 'packages/boot/app-boot/lib/index.js')).href),
+])
+console.log('checkout:', checkout)
+console.log('profile:', profileDir)
 const profile = loadProfileDirectory('dsh', profileDir, installAnchor)
 const resolution = await createRuntimeResolution({ installAnchor, profile })
 
