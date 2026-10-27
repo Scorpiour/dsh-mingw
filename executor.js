@@ -1,12 +1,19 @@
 /**
  * MinGW/MSYS bash executor for the `ctx.shell` seam.
  *
- * The stock Windows executor speaks PowerShell; this one keeps the sandbox
- * and subprocess mechanics of `@deepseek-ai/dsh-bash-sandbox` but puts the
+ * The stock Windows executor speaks PowerShell; this one keeps the subprocess
+ * and sandbox mechanics of `@deepseek-ai/dsh-bash-sandbox` but puts the
  * MinGW64 `bash.exe` bundled with Git for Windows first on the child `PATH`.
  * Every command then runs through `bash -c` with POSIX parsing, UTF-8 bytes,
  * and `$DSH_*` variables, so the model never has to deal with PowerShell
  * quoting, cmdlet interception, or console code pages.
+ *
+ * The Windows file sandbox cannot start the MSYS runtime at all — its
+ * WRITE_RESTRICTED, Low-integrity token denies the shared-memory namespace and
+ * token-default-DACL setup MSYS performs while loading — so `read-only` and
+ * `workspace-write` commands run through the local mechanics instead and carry
+ * an explicit unconfined notice. `danger-full-access` keeps the inherited
+ * sandbox path. The README's "sandbox modes" section owns the full rationale.
  *
  * The executor is mounted inside an isolated `shell` group by the bundle
  * patch, so it never replaces the host PowerShell executor that existing
@@ -24,6 +31,96 @@ const DEFAULT_MAX_SPILL_BYTES = 64 * 1024 * 1024
 
 /** Default SIGTERM→SIGKILL grace, matching `@deepseek-ai/dsh-bash-local`. */
 const DEFAULT_GRACE_MS = 3_000
+
+/** File-policy modes whose Windows backend cannot start Git Bash (see the README). */
+const CONFINED_MODES = new Set(['read-only', 'workspace-write'])
+
+/**
+ * The per-command stderr notice stamped on a call that had to run outside the
+ * file sandbox. Git Bash's MSYS runtime aborts during startup under the ACL
+ * sandbox's WRITE_RESTRICTED, Low-integrity token, so a confined mode cannot
+ * execute the command at all; running it unconfined keeps the shell usable but
+ * must be visible to the model and the user on every call.
+ * @param {string} mode the standing file policy the call would have used.
+ * @returns the notice line.
+ */
+function unconfinedNotice(mode) {
+  return `[mingw-shell] unconfined: DSH's ${mode} file sandbox cannot start Git Bash; `
+    + 'this command ran WITHOUT sandbox confinement.\n'
+}
+
+/**
+ * Merge the notice into one consuming `readOutput` delta as its first stderr
+ * line, preserving the stdout/`[stderr]` section layout the shell contract
+ * defines.
+ * @param {string} delta the executor's own delta.
+ * @param {string} notice the notice line to insert.
+ * @returns the delta carrying the notice exactly once.
+ */
+function withNotice(delta, notice) {
+  const marker = '[stderr]\n'
+  const index = delta.lastIndexOf(marker)
+  if (index >= 0) {
+    const at = index + marker.length
+    return `${delta.slice(0, at)}${notice}${delta.slice(at)}`
+  }
+  const separator = delta.length > 0 && !delta.endsWith('\n') ? '\n' : ''
+  return `${delta}${separator}[stderr]\n${notice}`
+}
+
+/**
+ * Present a locally executed process as if the notice were its first stderr
+ * bytes. The settled foreground projection, the job pump's observed stream
+ * (which `job_output` and promoted reads consume), and the consuming
+ * `readOutput` delta all carry it, so no consumer can mistake the command for
+ * a confined one.
+ *
+ * The notice is ASCII, so its byte length equals its character length and the
+ * observed reader can shift offsets directly.
+ * @template {import('@deepseek-ai/dsh-shell').ShellExecution} T
+ * @param {T} execution the live process handle from `executeArgv`.
+ * @param {string} mode the policy mode the call would have run under.
+ * @returns {T} the same handle, stamped.
+ */
+function stampUnconfined(execution, mode) {
+  const notice = unconfinedNotice(mode)
+  const observed = execution.observed.stderr
+  execution.observed = {
+    ...execution.observed,
+    stderr: {
+      readFrom(fromByte) {
+        if (fromByte >= notice.length) {
+          const read = observed.readFrom(fromByte - notice.length)
+          return { ...read, nextOffset: read.nextOffset + notice.length }
+        }
+        const read = observed.readFrom(0)
+        return {
+          text: notice.slice(fromByte) + read.text,
+          nextOffset: read.nextOffset + notice.length,
+          lossy: read.lossy,
+        }
+      },
+    },
+  }
+  const settle = execution.result.bind(execution)
+  let settled
+  execution.result = () => {
+    settled ??= settle().then(result => ({
+      ...result,
+      stderr: { ...result.stderr, text: notice + result.stderr.text },
+    }))
+    return settled
+  }
+  const read = execution.readOutput.bind(execution)
+  let noticePending = true
+  execution.readOutput = () => {
+    const next = read()
+    if (!noticePending) return next
+    noticePending = false
+    return { ...next, delta: withNotice(next.delta, notice) }
+  }
+  return execution
+}
 
 /**
  * Environment values that make tool output deterministic on Windows.
@@ -66,14 +163,30 @@ export const Config = z.object({
   verifyBash: z.boolean().default(true),
   /** Extra Windows directories prepended to `PATH`, after the bash directory. */
   pathPrepend: z.array(z.string()).default([]),
+  /**
+   * Run commands outside DSH's Windows file sandbox when the file policy is
+   * `read-only` or `workspace-write` (default true).
+   *
+   * Git Bash's MSYS runtime aborts while starting under the ACL sandbox's
+   * WRITE_RESTRICTED, Low-integrity token: it must create its shared-memory
+   * directory in `\BaseNamedObjects` through an absolute NT path and adjust its
+   * own token's default DACL, and the confined token permits neither. The
+   * sandboxed mode therefore cannot execute any command. With this option on,
+   * the command runs through the local executor instead and its stderr starts
+   * with an explicit `[mingw-shell] unconfined: ...` notice. Set it to false to
+   * keep DSH's confinement; Git Bash commands then fail to start in those modes.
+   */
+  unconfinedInSandboxedModes: z.boolean().default(true),
 })
 
 /**
  * `ctx.shell` provider that runs commands in MinGW bash.
  *
  * Registered in place of the host PowerShell executor only inside the bundle
- * patch's isolated shell group. Confinement, deadlines, output caps, and job
- * mechanics are inherited from `SandboxBashExecutor` unchanged.
+ * patch's isolated shell group. Deadlines, output caps, environment, and job
+ * mechanics are inherited from `SandboxBashExecutor` unchanged; confinement is
+ * inherited for `danger-full-access` and bypassed (with a visible notice) for
+ * the two modes whose Windows backend cannot start MSYS.
  */
 export class MingwBashExecutor extends SandboxBashExecutor {
   static inject = ['subprocess', 'sandbox', 'sandboxPolicy']
@@ -89,6 +202,9 @@ export class MingwBashExecutor extends SandboxBashExecutor {
    */
   resolvedShell
   resolutionKey
+
+  /** The last mode whose unconfined fallback was logged (host terminal notice only). */
+  announcedUnconfinedMode
 
   /**
    * Resolve the bash executable once per distinct configuration, lazily so a
@@ -132,6 +248,41 @@ export class MingwBashExecutor extends SandboxBashExecutor {
     env.PATH = buildBashPath(shell.path, this.config.pathPrepend, inheritedPath)
     Object.assign(env, DETERMINISTIC_ENV)
     return { ...spec, env }
+  }
+
+  /**
+   * Execute one command. `danger-full-access` and a disabled fallback go
+   * through the inherited sandboxing executor unchanged. A confined policy
+   * with the fallback on runs through the local mechanics instead, because the
+   * Windows ACL sandbox cannot start Git Bash at all; the handle is stamped
+   * with the unconfined notice on every stream so the exception is never
+   * silent.
+   * @param {import('@deepseek-ai/dsh-shell').ShellExecSpec} spec
+   * @returns {Promise<import('@deepseek-ai/dsh-shell').ShellExecution>}
+   */
+  async execute(spec) {
+    const mode = spec.sandboxPolicy?.mode
+    if (!CONFINED_MODES.has(mode) || this.config.unconfinedInSandboxedModes !== true) {
+      return super.execute(spec)
+    }
+    this.announceUnconfined(mode)
+    const execution = await this.executeArgv(spec, ['bash', '-c', spec.command])
+    return stampUnconfined(execution, mode)
+  }
+
+  /**
+   * State the fallback in the host terminal once per mode, so the reason is
+   * discoverable even when no tool result is inspected.
+   * @param {string} mode the confined policy mode being bypassed.
+   */
+  announceUnconfined(mode) {
+    if (this.announcedUnconfinedMode === mode) return
+    this.announcedUnconfinedMode = mode
+    this.ctx.logger?.warn(
+      `mingw-shell: Git Bash cannot start inside DSH's Windows file sandbox (${mode}); `
+      + 'commands run without sandbox confinement and carry a notice on stderr. '
+      + 'Set unconfinedInSandboxedModes: false on the mingw-shell row to enforce the sandbox instead.',
+    )
   }
 }
 

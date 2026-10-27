@@ -14,6 +14,9 @@
     "windows",
     "shell"
   ],
+  "scripts": {
+    "benchmark:shells": "node benchmarks/compare-shells.mjs"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Scorpiour/dsh-mingw.git"
